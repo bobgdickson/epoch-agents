@@ -31,7 +31,7 @@ class AgentOutputExample(BaseModel):
         It is useful for ensuring that the output is structured and validated.
     """
     input: str
-    output: ToolOutputExample
+    output: ToolOutputExample  # Other models can be embedded here as needed
     comment: str = "This is an example agent output."
 
 # ---------- TOOLS  ----------
