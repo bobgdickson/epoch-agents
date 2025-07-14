@@ -23,3 +23,10 @@ curl -X POST http://localhost:8000/email \
 # trigger the email triage and report generation
 curl -X POST http://localhost:8000/process
 ```
+
+### Manual Review
+
+```bash
+# manually retag emails flagged "2 - Review"
+python -m epoch_agent.manual_review
+```
