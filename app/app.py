@@ -28,7 +28,8 @@ def on_startup():
             body TEXT,
             received_at TEXT,
             processed INTEGER DEFAULT 0,
-            processed_at TEXT
+            processed_at TEXT,
+            status TEXT
         )
         """
     )

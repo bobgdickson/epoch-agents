@@ -27,6 +27,7 @@ class EmailORM(Base):
     received_at = Column(String)
     processed = Column(Boolean, default=False)
     processed_at = Column(String)
+    status = Column(String, nullable=True)
 
 Base.metadata.create_all(bind=engine)
 class Email(BaseModel):
@@ -58,6 +59,11 @@ class ReportOutput(BaseModel):
 
 class ProcessedOutput(BaseModel):
     success: bool
+
+class EmailStatus(BaseModel):
+    """Tag and ID for a processed email update."""
+    message_id: str
+    status: str
 
 
 @function_tool
@@ -104,16 +110,15 @@ def save_report(report: str) -> ReportOutput:
 
 
 @function_tool
-def mark_emails_processed(message_ids: list[str]) -> ProcessedOutput:
-    """
-    Marks the given email message_ids as processed in the database.
-    """
+def mark_emails_processed(updates: list[EmailStatus]) -> ProcessedOutput:
+    """Marks emails as processed and records their status code in the database."""
     with SessionLocal() as session:
-        for mid in message_ids:
-            session.query(EmailORM).filter(EmailORM.message_id == mid).update(
+        for upd in updates:
+            session.query(EmailORM).filter(EmailORM.message_id == upd.message_id).update(
                 {
                     EmailORM.processed: True,
                     EmailORM.processed_at: datetime.utcnow().isoformat(),
+                    EmailORM.status: upd.status,
                 }
             )
         session.commit()
@@ -124,10 +129,17 @@ email_triage_agent = Agent(
     name="email_triage_agent",
     instructions="""
 Use get_unprocessed_emails() to retrieve all unprocessed emails.
-Triage each email into categories (Critical, High, Normal, Low) with the most urgent first.
-Summarize emails in each category and assemble a markdown report.
+Assign one of the following tags to each email based on content and urgency:
+- "! - Bob": requires my immediate attention.
+- "1 - To Respond": emails that should have a response drafted by the LLM administrative assistant.
+- "2 - Review": emails where the LLM is not certain where to categorize and I will review in a separate feedback loop.
+- "3 - Responded": when the LLM administrative assistant has already responded automatically.
+- "4 - Waiting On": items that require action from others and I will update the assistant later.
+- "5 - Financials": anything finance related, including receipts, bills, or statements.
+- "6 - Newsletters": content I may want to consume later that the LLM assistant thinks I will like.
+Summarize emails grouped by tag and assemble a markdown report.
 Save the report using save_report(report).
-After saving, mark processed emails by calling mark_emails_processed(message_ids).
+After saving, mark processed emails and record their status by calling mark_emails_processed(updates), where updates is a list of objects each containing message_id and status.
 Return the output of save_report.
 """,
     tools=[get_unprocessed_emails, save_report, mark_emails_processed],
