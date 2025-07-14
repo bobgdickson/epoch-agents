@@ -2,11 +2,33 @@ from pydantic import BaseModel
 from agents import function_tool, Agent, Runner, trace
 import asyncio
 import os
-import sqlite3
+from sqlalchemy import create_engine, Column, String, Boolean, Text
+from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
+
+DB_FILE = os.getenv("DB_FILE", "email_triage.db")
+DATABASE_URL = f"sqlite:///{DB_FILE}"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine)
+
+Base = declarative_base()
+
+class EmailORM(Base):
+    __tablename__ = "emails"
+
+    message_id = Column(String, primary_key=True, index=True)
+    subject = Column(String)
+    sender = Column(String)
+    date = Column(String)
+    body = Column(Text)
+    received_at = Column(String)
+    processed = Column(Boolean, default=False)
+    processed_at = Column(String)
+
+Base.metadata.create_all(bind=engine)
 class Email(BaseModel):
     """
     Represents an email message for triage and summarization.
@@ -46,38 +68,18 @@ def get_unprocessed_emails() -> EmailList:
     Returns:
         EmailList: Emails awaiting triage.
     """
-    db_path = os.getenv("DB_FILE", "email_triage.db")
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS emails (
-            message_id TEXT PRIMARY KEY,
-            subject TEXT,
-            sender TEXT,
-            date TEXT,
-            body TEXT,
-            received_at TEXT,
-            processed INTEGER DEFAULT 0,
-            processed_at TEXT
-        )
-        """
-    )
-    cur.execute(
-        "SELECT message_id, subject, sender, date, body FROM emails WHERE processed=0"
-    )
-    rows = cur.fetchall()
-    conn.close()
-    emails = [
-        Email(
-            message_id=r[0],
-            subject=r[1],
-            sender=r[2],
-            date=r[3],
-            body=r[4],
-        )
-        for r in rows
-    ]
+    with SessionLocal() as session:
+        emails_orm = session.query(EmailORM).filter(EmailORM.processed == False).all()
+        emails = [
+            Email(
+                message_id=e.message_id,
+                subject=e.subject,
+                sender=e.sender,
+                date=e.date,
+                body=e.body,
+            )
+            for e in emails_orm
+        ]
     return EmailList(emails=emails)
 
 
@@ -103,16 +105,18 @@ def save_report(report: str) -> ReportOutput:
 
 @function_tool
 def mark_emails_processed(message_ids: list[str]) -> ProcessedOutput:
-    db_path = os.getenv("DB_FILE", "email_triage.db")
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    for mid in message_ids:
-        cur.execute(
-            "UPDATE emails SET processed=1, processed_at=? WHERE message_id=?",
-            (datetime.utcnow().isoformat(), mid),
-        )
-    conn.commit()
-    conn.close()
+    """
+    Marks the given email message_ids as processed in the database.
+    """
+    with SessionLocal() as session:
+        for mid in message_ids:
+            session.query(EmailORM).filter(EmailORM.message_id == mid).update(
+                {
+                    EmailORM.processed: True,
+                    EmailORM.processed_at: datetime.utcnow().isoformat(),
+                }
+            )
+        session.commit()
     return ProcessedOutput(success=True)
 
 
