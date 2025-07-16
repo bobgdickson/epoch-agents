@@ -66,6 +66,7 @@ def receive_email(inbound: InboundEmail):
             ),
         )
         conn.commit()
+        print(f"Received email: {inbound.subject}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -75,13 +76,12 @@ def receive_email(inbound: InboundEmail):
 
 @app.get("/review", response_model=list[Email])
 def list_review_emails():
-    """List emails flagged for manual review (status == '2 - Review')."""
+    """List emails."""
     try:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         cur.execute(
-            "SELECT message_id, subject, sender, date, body FROM emails WHERE status = ?",
-            ("2 - Review",),
+            "SELECT message_id, subject, sender, date, body FROM emails",
         )
         rows = cur.fetchall()
     finally:
