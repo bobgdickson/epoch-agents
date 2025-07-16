@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 
 from agents import Runner
-from epoch_agent.email_triage_agent import ReportOutput, run_email_triage_agent
+from epoch_agent.email_triage_agent import Email, ReportOutput, run_email_triage_agent
 
 load_dotenv()
 
@@ -71,6 +71,40 @@ def receive_email(inbound: InboundEmail):
     finally:
         conn.close()
     return {"success": True}
+
+
+@app.get("/review", response_model=list[Email])
+def list_review_emails():
+    """List emails flagged for manual review (status == '2 - Review')."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT message_id, subject, sender, date, body FROM emails WHERE status = ?",
+            ("2 - Review",),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [Email(message_id=r[0], subject=r[1], sender=r[2], date=r[3], body=r[4]) for r in rows]
+
+
+@app.get("/review/{message_id}", response_model=Email)
+def view_review_email(message_id: str):
+    """Retrieve a single email by message_id for manual review."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT message_id, subject, sender, date, body FROM emails WHERE message_id = ?",
+            (message_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Email not found")
+    return Email(message_id=row[0], subject=row[1], sender=row[2], date=row[3], body=row[4])
 
 
 @app.post("/process", response_model=ReportOutput)
