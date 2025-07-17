@@ -30,3 +30,11 @@ curl -X POST http://localhost:8000/process
 # manually retag emails flagged "2 - Review"
 python -m epoch_agent.manual_review
 ```
+
+### IMAP Fetcher
+
+```bash
+# fetch new unseen emails (up to one week old) via IMAP into the database
+# mailbox is opened read-only so messages are not marked or deleted
+python -m epoch_agent.imap_fetcher
+```
