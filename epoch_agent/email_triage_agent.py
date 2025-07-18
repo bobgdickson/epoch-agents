@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from agents import function_tool, Agent, Runner, trace
 import asyncio
 import os
-from sqlalchemy import create_engine, Column, String, Boolean, Text
+from sqlalchemy import create_engine, Column, String, Boolean, Text, Integer, LargeBinary
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 from dotenv import load_dotenv
@@ -28,6 +28,16 @@ class EmailORM(Base):
     processed = Column(Boolean, default=False)
     processed_at = Column(String)
     status = Column(String, nullable=True)
+    html_body = Column(Text, nullable=True)
+
+class AttachmentORM(Base):
+    __tablename__ = "attachments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(String, index=True)
+    filename = Column(String)
+    content_type = Column(String)
+    data = Column(LargeBinary)
 
 Base.metadata.create_all(bind=engine)
 class Email(BaseModel):

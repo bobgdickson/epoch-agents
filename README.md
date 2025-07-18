@@ -36,5 +36,6 @@ python -m epoch_agent.manual_review
 ```bash
 # fetch new unseen emails (up to one week old) via IMAP into the database
 # mailbox is opened read-only so messages are not marked or deleted
+# captures HTML body and stores attachments up to IMAP_ATTACHMENT_MAX_SIZE (default 1MB)
 python -m epoch_agent.imap_fetcher
 ```

@@ -26,10 +26,22 @@ def on_startup():
             sender TEXT,
             date TEXT,
             body TEXT,
+            html_body TEXT,
             received_at TEXT,
             processed INTEGER DEFAULT 0,
             processed_at TEXT,
             status TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id TEXT,
+            filename TEXT,
+            content_type TEXT,
+            data BLOB
         )
         """
     )

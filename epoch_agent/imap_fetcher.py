@@ -12,7 +12,7 @@ except ImportError:
     IMAPClient = None
 from email.header import decode_header, make_header
 
-from epoch_agent.email_triage_agent import EmailORM, SessionLocal
+from epoch_agent.email_triage_agent import EmailORM, AttachmentORM, SessionLocal
 
 
 def fetch_emails():
@@ -44,6 +44,7 @@ def fetch_emails():
             return
         response = client.fetch(messages, ["RFC822"])
 
+    max_size = int(os.getenv("IMAP_ATTACHMENT_MAX_SIZE", 1024 * 1024))
     with SessionLocal() as session:
         for msgid, data in response.items():
             raw = data[b"RFC822"]
@@ -52,24 +53,39 @@ def fetch_emails():
             subject = str(make_header(decode_header(msg.get("Subject", ""))))
             sender = str(make_header(decode_header(msg.get("From", ""))))
             date = msg.get("Date", "")
-            # extract plain-text body
-            body = ""
+            text_body = None
+            html_body = None
+            # extract parts
             if msg.is_multipart():
                 for part in msg.walk():
-                    if part.get_content_type() == "text/plain" and not part.get("Content-Disposition"):
+                    ctype = part.get_content_type()
+                    disp = part.get_content_disposition()
+                    if ctype == "text/plain" and disp is None and text_body is None:
                         charset = part.get_content_charset() or "utf-8"
-                        body = part.get_payload(decode=True).decode(charset, errors="replace")
-                        break
+                        text_body = part.get_payload(decode=True).decode(charset, errors="replace")
+                    elif ctype == "text/html" and disp is None and html_body is None:
+                        charset = part.get_content_charset() or "utf-8"
+                        html_body = part.get_payload(decode=True).decode(charset, errors="replace")
+                    elif disp == "attachment":
+                        payload = part.get_payload(decode=True) or b""
+                        if len(payload) <= max_size:
+                            session.add(AttachmentORM(
+                                message_id=message_id,
+                                filename=part.get_filename(),
+                                content_type=ctype,
+                                data=payload,
+                            ))
             else:
                 charset = msg.get_content_charset() or "utf-8"
-                body = msg.get_payload(decode=True).decode(charset, errors="replace")
+                text_body = msg.get_payload(decode=True).decode(charset, errors="replace")
 
             email_obj = EmailORM(
                 message_id=message_id,
                 subject=subject,
                 sender=sender,
                 date=date,
-                body=body,
+                body=text_body or "",
+                html_body=html_body,
                 received_at=datetime.utcnow().isoformat(),
             )
             session.add(email_obj)
