@@ -37,10 +37,10 @@ def fetch_emails():
         # Open mailbox readonly so messages are not marked or deleted
         client.select_folder(folder, readonly=True)
         # Only fetch unseen messages no older than one week
-        since = (datetime.utcnow() - timedelta(days=7)).date()
+        since = (datetime.utcnow() - timedelta(days=1)).date()
         messages = client.search(["UNSEEN", "SINCE", since])
         if not messages:
-            print("No new messages found within the last 7 days.")
+            print("No new messages found within the last 1 days.")
             return
         response = client.fetch(messages, ["RFC822"])
 

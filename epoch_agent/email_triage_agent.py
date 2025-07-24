@@ -163,7 +163,8 @@ async def run_email_triage_agent():
     Execute the email_triage_agent to generate and save the email triage report.
     """
     with trace("Running email_triage_agent"):
-        result = await Runner.run(email_triage_agent, None)
+        input_data = 'This is a placeholder input for the agent.'
+        result = await Runner.run(email_triage_agent, input_data)
         print(f"Report saved: {result}")
         return result
 

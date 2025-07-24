@@ -2,52 +2,23 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
-import sqlite3
 from datetime import datetime
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from agents import Runner
-from epoch_agent.email_triage_agent import Email, ReportOutput, run_email_triage_agent
+from epoch_agent.email_triage_agent import Email, ReportOutput, run_email_triage_agent, Base, EmailORM
 
 load_dotenv()
 
 DB_PATH = os.getenv("DB_FILE", "email_triage.db")
 
+engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine)
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
-
-@app.on_event("startup")
-def on_startup():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS emails (
-            message_id TEXT PRIMARY KEY,
-            subject TEXT,
-            sender TEXT,
-            date TEXT,
-            body TEXT,
-            html_body TEXT,
-            received_at TEXT,
-            processed INTEGER DEFAULT 0,
-            processed_at TEXT,
-            status TEXT
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS attachments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message_id TEXT,
-            filename TEXT,
-            content_type TEXT,
-            data BLOB
-        )
-        """
-    )
-    conn.commit()
-    conn.close()
-
 
 class InboundEmail(BaseModel):
     message_id: str
@@ -60,65 +31,73 @@ class InboundEmail(BaseModel):
 @app.post("/email")
 def receive_email(inbound: InboundEmail):
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO emails (
-                message_id, subject, sender, date, body, received_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                inbound.message_id,
-                inbound.subject,
-                inbound.sender,
-                inbound.date,
-                inbound.body,
-                datetime.utcnow().isoformat(),
-            ),
-        )
-        conn.commit()
+        with SessionLocal() as session:
+            email = EmailORM(
+                message_id=inbound.message_id,
+                subject=inbound.subject,
+                sender=inbound.sender,
+                date=inbound.date,
+                body=inbound.body,
+                received_at=datetime.utcnow().isoformat(),
+            )
+            session.add(email)
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
         print(f"Received email: {inbound.subject}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
     return {"success": True}
 
 
 @app.get("/review", response_model=list[Email])
 def list_review_emails():
-    """List emails."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT message_id, subject, sender, date, body FROM emails",
-        )
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-    return [Email(message_id=r[0], subject=r[1], sender=r[2], date=r[3], body=r[4]) for r in rows]
+    """List emails flagged for review."""
+    with SessionLocal() as session:
+        emails_orm = session.query(EmailORM).filter(EmailORM.status.isnot(None)).all()
+        return [
+            Email(
+                message_id=e.message_id,
+                subject=e.subject,
+                sender=e.sender,
+                date=e.date,
+                body=e.body,
+            )
+            for e in emails_orm
+        ]
 
 
 @app.get("/review/{message_id}", response_model=Email)
 def view_review_email(message_id: str):
     """Retrieve a single email by message_id for manual review."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT message_id, subject, sender, date, body FROM emails WHERE message_id = ?",
-            (message_id,),
+    with SessionLocal() as session:
+        email = (
+            session.query(EmailORM)
+            .filter(EmailORM.message_id == message_id, EmailORM.status.isnot(None))
+            .first()
         )
-        row = cur.fetchone()
-    finally:
-        conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="Email not found")
-    return Email(message_id=row[0], subject=row[1], sender=row[2], date=row[3], body=row[4])
+        if not email:
+            raise HTTPException(status_code=404, detail="Email not found")
+        return Email(
+            message_id=email.message_id,
+            subject=email.subject,
+            sender=email.sender,
+            date=email.date,
+            body=email.body,
+        )
 
 
 @app.post("/process", response_model=ReportOutput)
 async def process_emails():
     return await run_email_triage_agent()
+
+@app.post("/fetch_email")
+async def fetch_email():
+    """Fetch emails from IMAP server."""
+    from epoch_agent.services.imap_fetcher import fetch_emails
+    try:
+        fetch_emails()
+        return {"success": True, "message": "Emails fetched successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
