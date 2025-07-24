@@ -124,13 +124,11 @@ def mark_emails_processed(updates: list[EmailStatus]) -> ProcessedOutput:
     """Marks emails as processed and records their status code in the database."""
     with SessionLocal() as session:
         for upd in updates:
-            session.query(EmailORM).filter(EmailORM.message_id == upd.message_id).update(
-                {
-                    EmailORM.processed: True,
-                    EmailORM.processed_at: datetime.utcnow().isoformat(),
-                    EmailORM.status: upd.status,
-                }
-            )
+            email_obj = session.get(EmailORM, upd.message_id)
+            if email_obj:
+                email_obj.processed = True
+                email_obj.processed_at = datetime.utcnow().isoformat()
+                email_obj.status = upd.status
         session.commit()
     return ProcessedOutput(success=True)
 
@@ -150,7 +148,7 @@ Assign one of the following tags to each email based on content and urgency:
 Summarize emails grouped by tag and assemble a markdown report.
 Save the report using save_report(report).
 After saving, mark processed emails and record their status by calling mark_emails_processed(updates), where updates is a list of objects each containing message_id and status.
-Return the output of save_report.
+Always finish by calling save_report tool and using that tool output as your final output.
 """,
     tools=[get_unprocessed_emails, save_report, mark_emails_processed],
     model="gpt-4.1-mini",

@@ -51,11 +51,28 @@ def receive_email(inbound: InboundEmail):
     return {"success": True}
 
 
+@app.get("/all", response_model=list[Email])
+def list_review_emails():
+    """List all emails."""
+    with SessionLocal() as session:
+        emails_orm = session.query(EmailORM).all()
+        return [
+            Email(
+                message_id=e.message_id,
+                subject=e.subject,
+                sender=e.sender,
+                date=e.date,
+                body=e.body,
+            )
+            for e in emails_orm
+        ]
+    
+
 @app.get("/review", response_model=list[Email])
 def list_review_emails():
     """List emails flagged for review."""
     with SessionLocal() as session:
-        emails_orm = session.query(EmailORM).filter(EmailORM.status.isnot(None)).all()
+        emails_orm = session.query(EmailORM).filter(EmailORM.processed == False).all()
         return [
             Email(
                 message_id=e.message_id,

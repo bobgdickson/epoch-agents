@@ -12,13 +12,15 @@ except ImportError:
     IMAPClient = None
 from email.header import decode_header, make_header
 
-from epoch_agent.email_triage_agent import EmailORM, AttachmentORM, SessionLocal
+## avoid circular import warning; defer ORM imports until function execution
 
 
 def fetch_emails():
     """
     Connect to the IMAP server, fetch unseen emails, and store them in the database.
     """
+    # import ORM types here to avoid import-cycle warnings
+    from epoch_agent.email_triage_agent import EmailORM, AttachmentORM, SessionLocal
     if IMAPClient is None:
         print("imapclient library is required. Install with 'pip install imapclient'.")
         return
